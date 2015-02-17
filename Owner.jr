@@ -1,0 +1,74 @@
+import edu.ucdavis.jr.JR;
+
+/**
+ * Class representing the Owner in the program, serving customers and 
+ * administering shop.
+ */
+public class Owner {
+    // Is time to close shop?
+    private boolean closingTime = false;
+    // Ready to close, can owner go home?
+    private boolean readyToClose = false;
+    // Channel to receive alarm on when shop should close
+    op void closingTimeAlarm();
+    // Channel to receive alarm on when last call should be called
+    op void lastCallAlarm();
+    // Public channel to receive notifications on customers that have been created
+    public static op void customerCreated();
+    // Public channel to receive notifications on customers that have left the shop
+    public static op void customerLeft();
+
+    // Variables to keep track of all customers that have not exited the shop
+    private int customersLeft = 0;
+    
+    public Owner() {
+        TeaShop.clock.setAlarm(closingTimeAlarm, TeaShop.SHOP_OPEN_TIME);
+        TeaShop.clock.setAlarm(lastCallAlarm, TeaShop.LAST_CALL_TIME);
+    }
+    
+    // Owner process
+    private process OwnerThread {
+        // Run until closing time and all customers leave
+        while (!readyToClose) {
+            inni boolean TeaShop.requestTea() st (lastCallAlarm.length() == 0 && closingTimeAlarm.length() == 0 && 
+                                                  customerCreated.length() == 0 && customerLeft.length() == 0) {
+                // Serve customer tea
+                if (closingTime) {
+                    TeaShop.print("Owner rejected customer order.");
+                } else {
+                    // Otherwise, make tea and serve
+                    TeaShop.clock.delay(TeaShop.TEA_MAKE_TIME);
+                    TeaShop.print("Owner served customer order.");
+                }
+                return !closingTime;
+            }
+            [] void customerCreated() {
+                // New customer created. Super high priority, so that the owner doesn't 
+                // leave until all created customers have left
+                customersLeft++;
+            }
+            [] void customerLeft() st (customerCreated.length() == 0) {
+                // Customer has left the shop
+                customersLeft--;
+                // If all created customers have left, shop is ready to close
+                if (closingTime && customersLeft == 0)
+                    readyToClose = true;
+            }
+            [] void lastCallAlarm() st (customerCreated.length() == 0) {
+                // Now last call! Will inform customers in the shop
+                TeaShop.print("Last call!");
+                for (int i = 0; i < customersLeft; i++) 
+                    send TeaShop.lastCall();
+            }
+            [] void closingTimeAlarm() st (customerCreated.length() == 0) {
+                // Now time for closing! Informs Chef and Door
+                TeaShop.print("Closing time!");
+                for (int i = 0; i < 2; i++) 
+                    send TeaShop.closingTimeCall();
+                closingTime = true;
+            }
+        }
+        TeaShop.print("Owner going home.");
+    }
+
+}

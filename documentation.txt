@@ -1,0 +1,43 @@
+﻿Lab 3, revision 1 in the Concurrent Programming course TDA382
+Chalmers University of Technology
+By Johannes Keinestam and Johan Fredriksson, 2013-03-18
+
+For documentation of the system and design choices, we refer to the previous documentation.
+This document aims to describe the changes made to the system, to satisfy the previously
+misunderstood requirements, and explain the nature of the misunderstanding as we see fit.
+
+SHARED DATA:
+Our previous solution used shared data in form of a list of list of customer channels, that 
+was however unmutable from the outside of the TeaShop class, due to a misunderstanding of what 
+was allowed in the solution. We have eliminated the shared data problem, and now instead use
+the randez-vous functionality, using call on the requestTea channel, blocking the customer thread,
+and when it unblocks the customer is considered served (or rather, dealt with, since closing
+time may mean that the customer does not get served.) 
+
+CUSTOMERS AND LAST CALL:
+Due to the change is design detailed above, we have found that we can completely eliminate the 
+need for customers to have personal channels, and instead rely on a public last call channel in
+the TeaShop class, on which a last call message for each customer is put.
+
+PRIORITY:
+The feedback received said that we ought to prioritize last call and other important messages
+over messages such as serve tea, by using st guards. We do this to put a low priority on the 
+order tea messages, so that more important messages will be dealt with before.
+
+OWNER LEAVING BEFORE SLOW CUSTOMERS:
+Previously, our solution could run into problems where very slow customers have been created,
+that have not gotten the opportunity to send a enterShop() message, and then the customerCount
+in TeaShop could be zero, even though there was a customer created that had not been counted.
+This would mean that the readyToClose() message is sent to the owner, who then leaves.
+
+In our solution, both the shop and the owner know how many customer objects that have been 
+created, as well as how many have left the shop. This is distributed to the owner by high-priority
+messages. Both the owner and TeaShop runs only until it is ready to close. TeaShop knows this
+by checking the customerCount, which is increased when a customer is created, and decreased when
+they leave, and owner knows it by checking that customersLeft is zero, which represents
+customerCreated - customersExited. Customers created after closing time will try to order one cup 
+of tea, and will be rejected immediately by the owner, upon which they will leave the shop.
+
+Furthermore, we have eliminated customer IDs being distributed by the shop, since we do not 
+need them in the list anymore, and also because doing so requires the door to still be open, for
+customers that have not yet entered the shop.

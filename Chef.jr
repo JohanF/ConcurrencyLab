@@ -1,0 +1,32 @@
+import edu.ucdavis.jr.JR;
+
+/**
+ * Class representing the Chef in the program, serving customers.
+ * As opposed to the Owner, he goes home at closing time.
+ */
+public class Chef {
+    // Is it closing time (i.e. 8 hrs after opening, shop not necessarily closed yet)
+    boolean closingTime = false;
+
+    public Chef() { }
+    
+    // Chef process
+    private process ChefThread {
+        // Chef goes home immedietly at closing time, after serving
+        // any drinks that he may still be preparing.
+        while (!closingTime) {
+            inni boolean TeaShop.requestTea() st (TeaShop.closingTimeCall.length() == 0) {
+                TeaShop.clock.delay(TeaShop.TEA_MAKE_TIME);
+                TeaShop.print("Chef served customer order.");
+                
+                // Chef cannot reject order, see documentation
+                return true;
+            }
+            [] void TeaShop.closingTimeCall(){
+                // Received closing time call from owner
+                closingTime = true;
+            }
+        }
+        TeaShop.print("Chef going home.");
+    }
+}

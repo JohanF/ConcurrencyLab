@@ -1,0 +1,162 @@
+import edu.ucdavis.jr.JR;
+import java.util.*;
+
+/**
+ * The main class, representing the tea shop.
+ */
+public class TeaShop {
+    /* CHANNELS */
+    // Receives orders from customers with a customer ID, served by owner and chef
+    public static op boolean requestTea();
+    // Called by customers when entering shop
+    public static op void enterShop();
+    // Called by customers when exiting shop, giving their ID and order statistics
+    public static op void exitShop(int, List<OrderStat>);
+    // Called by owner to notify everyone else that the shop is closing
+    public static op void closingTimeCall();
+    // Called by owner to notify customers that it's last call
+    public static op void lastCall();
+    
+    /* SHOP VARIABLES -- NON-MUTABLE OUTSIDE THIS CONTEXT! */
+    // Tea shop clock with simulation speed, final so no changes can be made
+    public static final Clock clock = new Clock(1);
+    // Is it ready to close (time to close, and empty shop)?
+    private static boolean isReadyToClose = false; 
+    // Is it time to close? (note! not same as boolean isReadyToClose above)
+    private static boolean closingTime = false;
+    // Number of customers in the shop right now
+    private static int customerCount = 0;
+
+    /* CONSTANTS */
+    // Time for chef/owner to make a cup of tea, in seconds
+    public static final int TEA_MAKE_TIME = 30;
+    // Time between new customers entering the shop
+    public static final MyTime CUSTOMER_DELAY = new MyTime(0, 5, 0);
+    // The amount of cups that each customer should drink before leaving
+    public static final int CUSTOMER_CUP_LIMIT = 4;
+    // The time, in seconds, it takes to drink a cup of tea
+    public static final int CUSTOMER_DRINK_TIME = 15*60;
+    // Time for how long the shop should be open
+    public static final MyTime SHOP_OPEN_TIME = new MyTime(8, 0, 0);
+    // Time for when the last call should be made
+    public static final MyTime LAST_CALL_TIME = new MyTime(7, 50, 0);
+    
+    /* STATISTICS */
+    // Counter of total customers entered, used for customer ID
+    private static int statsCustomerCount = 0;
+    // List of all orders placed and their statistics
+    private static ArrayList<OrderStat> statsOrders = new ArrayList<OrderStat>();
+    
+    public static void main(String[] args) {
+        print("Simulation started.");
+        
+        new Owner();
+        new Chef();
+        
+        try {
+            // Print statistics when all processes are done
+            JR.registerQuiescenceAction(statisticsPrint);
+        } catch (edu.ucdavis.jr.QuiescenceRegistrationException e){
+            e.printStackTrace();
+        }
+    }
+    
+    // Door process, very logically intertwined with the TeaShop, see documentation. 
+    private static process TeaShopDoor {
+        // Is currently waiting for customers to enter? Used so that duplicate
+        // alarms aren't created when other messages are consumed in inni
+        boolean waitingForCustomer = false;
+        // Channel to receive alarms when new customers should enter
+        op void enterCustomerAlarm();     
+        
+        while (!isReadyToClose) {
+            // If not yet closing time or already waiting for customer, 
+            // then new customer will enter in CUSTOMER_DELAY time
+            if (!closingTime && !waitingForCustomer) {
+                send TeaShop.clock.setAlarm(enterCustomerAlarm, CUSTOMER_DELAY);
+                waitingForCustomer = true;
+            }
+            
+            inni void enterCustomerAlarm() st !closingTime {
+                // Customer to enter, create new
+                new Customer();
+                send Owner.customerCreated();
+                customerCount++;
+                waitingForCustomer = false;
+            }
+            [] void closingTimeCall() st !closingTime {
+                // Closing time, no more customers can enter shop!
+                closingTime = true;
+            } 
+            [] void exitShop(int customerId, List<TeaShop.OrderStat> custOrderStats) {
+                // Customer has exited shop
+                customerCount--;
+                send Owner.customerLeft();
+                // Gather statistics from customer that left
+                statsOrders.addAll(custOrderStats);
+                print("Customer "+customerId+" has left the shop!");
+                
+                // If closing time and all customers have left, close shop
+                if (closingTime && customerCount == 0) {
+                    isReadyToClose = true;
+                }
+            } 
+            [] void enterShop() st !closingTime {
+                // Customer has entered the shop
+                statsCustomerCount++;
+                print("Customer "+statsCustomerCount+" has entered the shop!");
+            }
+        }
+        clock.shutdown();
+    }
+    
+    // Calculates and prints statistics. Called when all threads are finished.
+    public static op void statisticsPrint() {
+        System.out.println("Shop closed!");
+        // Calculate statistics, see assignment description
+        int ordersPlaced = statsOrders.size();
+        int ordersAccepted = 0;
+        int ordersRefused = 0;
+        int acceptedAfterLastCall = 0;
+        int rushCustomers = 0;
+        int rejectedRushCustomers = 0;
+        int acceptedRushCustomers = 0;
+
+        MyTime maxWaitingTime = new MyTime(0);
+        MyTime minWaitingTime = SHOP_OPEN_TIME;
+        int accWaitingTimeValue = 0;
+        
+        for (OrderStat order : statsOrders) {
+            if (order.accepted) ordersAccepted++;
+            if (order.afterLastOrder && order.accepted) acceptedAfterLastCall++;
+            if (order.rushOrder) rushCustomers++;
+            if (order.rushOrder && order.accepted) acceptedRushCustomers++;
+            if (order.waitingTime.compareTo(maxWaitingTime) > 0 && order.accepted) maxWaitingTime = order.waitingTime;
+            if (order.waitingTime.compareTo(minWaitingTime) < 0 && order.accepted) minWaitingTime = order.waitingTime;
+            accWaitingTimeValue += order.waitingTime.getValue();
+        }
+        ordersRefused = ordersPlaced - ordersAccepted;
+        rejectedRushCustomers = rushCustomers - acceptedRushCustomers;
+        MyTime averageWaiting = new MyTime(accWaitingTimeValue/ordersPlaced);
+        
+        // Print statistics
+        System.out.println("Numbers of orders placed: " + ordersPlaced + " (accepted: " + ordersAccepted + ", rejected: " + ordersRefused + ")");
+        System.out.println("Numbers of orders accepted after last order call: " + acceptedAfterLastCall);
+        System.out.println("Numbers of customers that reacted to last order call: " + rushCustomers + " (accepted: " + acceptedRushCustomers + ", rejected: " + rejectedRushCustomers + ")");
+        System.out.println("Average waiting time: " + averageWaiting + " (maximum: " + maxWaitingTime + ", minimum: " + minWaitingTime + ")");
+    }  
+    
+    // Convenience method for printing info with simulation time stamp
+    public static void print(String msg) {
+        System.out.println(clock.getTime() + " | " + msg);
+    }
+
+    // Basically a struct of some order information, for statistics purposes
+    public static class OrderStat {
+        public MyTime waitingTime;
+        public boolean accepted;
+        public boolean afterLastOrder;
+        public boolean rushOrder;
+    }
+    
+}

@@ -1,0 +1,98 @@
+import edu.ucdavis.jr.JR;
+import java.util.*;
+
+/**
+ * Class representing a Customer in the program, ordering tea.
+ */
+public class Customer {
+    // Easy numbering of Customers through static integer
+    private static int customerCount = 0;
+    // Ready to leave when has drunk 4 cups, ordered last call cup or been rejected an order (after closing time)
+    private boolean readyToLeave = false;
+    // When last call has been ordered, may only order one more cup
+    private boolean lastCall = false;
+    // 40 percent of customers are "rush customers", see documentation
+    private boolean rushCustomer = Math.random() < 0.4;
+    // The number of cups that have been drunk
+    private int cupCount = 0;
+    // The customer's channel to receive done-drinking alarms from clock
+    op void doneDrinkingChannel();
+    // The ID of the customer, set when entering door
+    private int myId;
+    // Collected statistics of all of the customer's orders
+    List<TeaShop.OrderStat> customerStats = new ArrayList<TeaShop.OrderStat>();
+    
+    public Customer() {
+        myId = ++customerCount;
+    }
+    
+    // Customer process
+    private process CustomerThread {
+        // Entering shop
+        send TeaShop.enterShop();
+        // Is currently ordering rush order cup? For statistics purposes
+        boolean rushOrder = false;
+        
+        // Customer will order until ready to leave
+        while (!readyToLeave) {
+            MyTime timeBefore = TeaShop.clock.getTime();
+            
+            // Request tea in order queue
+            TeaShop.print("Customer "+myId+" requested cup "+(cupCount+1));
+            boolean wasServed = TeaShop.requestTea();
+            
+            MyTime timeAfter = TeaShop.clock.getTime();
+        
+            // Create the statistics for this order
+            TeaShop.OrderStat stat = new TeaShop.OrderStat();
+            stat.waitingTime = timeAfter.sub(timeBefore);
+            stat.accepted = wasServed;
+            stat.afterLastOrder = lastCall;
+            stat.rushOrder = rushOrder;
+            customerStats.add(stat);
+        
+            if (wasServed && !lastCall) {
+                // Was served tea, will now drink their cup
+                TeaShop.print("Customer "+myId+" was served cup "+(cupCount+1));
+                send TeaShop.clock.setAlarm(doneDrinkingChannel, new MyTime(TeaShop.CUSTOMER_DRINK_TIME));
+
+                inni void doneDrinkingChannel() st (TeaShop.lastCall.length() == 0) {
+                    // Now done drinking cup
+                    cupCount++;
+                    TeaShop.print("Customer "+myId+" finished drinking cup "+cupCount);
+                    // Ready to leave if finished drinking all cups
+                    readyToLeave = (cupCount >= TeaShop.CUSTOMER_CUP_LIMIT);
+                }
+                [] void TeaShop.lastCall() st !lastCall {
+                    // Owner called last call
+                    lastCall = true;
+                    
+                    if (willOrderAtLastCall()) {
+                        // Only for rush customers (see documentation), drinks 
+                        // their tea immediately at last call and goes again.
+                        cupCount++;
+                        rushOrder = true;
+                        TeaShop.print("Customer "+myId+" finished drinking cup "+cupCount+" immediately and will order again.");
+                    }
+                }
+            } else {
+                // Was served their last call cup, then drink and leave
+                // or was rejected, the leave immediately
+                if (wasServed)
+                    TeaShop.clock.delay(TeaShop.CUSTOMER_DRINK_TIME);
+                else
+                    TeaShop.print("Customer "+myId+" was rejected cup "+(cupCount+1)+"!");
+                readyToLeave = true;
+            }
+        }
+        
+        // When leaving, send collected statistics to TeaShop
+        send TeaShop.exitShop(myId, customerStats);
+    }
+
+    // A customer will only place a "rush order", i.e. drink up immediately and order again,
+    // if they are a "rush customer", and they are not on their last cup
+    private boolean willOrderAtLastCall() {
+        return rushCustomer && (cupCount < TeaShop.CUSTOMER_CUP_LIMIT);
+    }
+}
